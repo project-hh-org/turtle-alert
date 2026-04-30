@@ -86,6 +86,11 @@ app.whenReady().then(() => {
   // 로그인 시 자동 실행 설정 동기화
   app.setLoginItemSettings({ openAtLogin: store.get("autoStart") });
 
+  // 로그인 자동 실행으로 시작된 경우 타이머 모드로 감시 자동 시작
+  if (app.getLoginItemSettings().wasOpenedAtLogin) {
+    core.startTimer(store.get("intervalMin"));
+  }
+
   // 앱 시작 시 오래된 스냅샷 정리
   cleanOldSnapshots(
     store.get("snapshotSavePath"),
