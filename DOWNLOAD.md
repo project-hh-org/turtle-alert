@@ -11,7 +11,7 @@
 터미널에 익숙하다면 **이게 가장 간편**합니다. 칩셋 자동 인식 + Gatekeeper 우회까지 한 방에 처리됩니다.
 
 ```bash
-brew install --cask project-hh-com/turtle-alert/turtle-alert
+brew install --cask project-hh-org/turtle-alert/turtle-alert
 ```
 
 제거하려면:
@@ -26,8 +26,8 @@ brew uninstall --cask --zap turtle-alert  # 설정/로그까지 전부 삭제
 
 | 파일 | 크기 | 대상 |
 |---|---|---|
-| 🍎 [**Apple Silicon**](https://github.com/project-hh-com/turtle-alert/releases/latest/download/TurtleAlert-arm64.dmg) | ~200MB | M1/M2/M3/M4 |
-| 💻 [**Intel**](https://github.com/project-hh-com/turtle-alert/releases/latest/download/TurtleAlert-x64.dmg) | ~205MB | Intel Mac |
+| 🍎 [**Apple Silicon**](https://github.com/project-hh-org/turtle-alert/releases/latest/download/TurtleAlert-arm64.dmg) | ~200MB | M1/M2/M3/M4 |
+| 💻 [**Intel**](https://github.com/project-hh-org/turtle-alert/releases/latest/download/TurtleAlert-x64.dmg) | ~205MB | Intel Mac |
 
 터미널에서 내 칩 확인:
 ```bash
@@ -83,4 +83,4 @@ xattr -dr com.apple.quarantine /Applications/TurtleAlert.app
 
 - 앱을 완전히 종료하려면: 메뉴바 🐢 클릭 → **"종료"**
 - 타이머만 중지: **"중지"** 선택 (앱은 계속 실행)
-- 이슈/건의: [GitHub Issues](https://github.com/project-hh-com/turtle-alert/issues)
+- 이슈/건의: [GitHub Issues](https://github.com/project-hh-org/turtle-alert/issues)

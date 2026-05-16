@@ -10,7 +10,7 @@
 - **타입**: macOS 메뉴바 상주 Electron 앱
 - **목적**: 주기적 자세 교정 알림 ("어휴~ 거북이되겠다~" 잔소리 톤)
 - **아키텍처**: 단일 프로세스 Electron (메인만, 렌더러 없음)
-- **저장소**: https://github.com/project-hh-com/turtle-alert
+- **저장소**: https://github.com/project-hh-org/turtle-alert
 
 ---
 

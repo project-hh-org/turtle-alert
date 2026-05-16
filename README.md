@@ -8,10 +8,10 @@
 
 | 칩 | 바로 다운로드 |
 |---|---|
-| 🍎 Apple Silicon (M1/M2/M3/M4) | [TurtleAlert-arm64.dmg](https://github.com/project-hh-com/turtle-alert/releases/latest/download/TurtleAlert-arm64.dmg) |
-| 💻 Intel Mac | [TurtleAlert-x64.dmg](https://github.com/project-hh-com/turtle-alert/releases/latest/download/TurtleAlert-x64.dmg) |
+| 🍎 Apple Silicon (M1/M2/M3/M4) | [TurtleAlert-arm64.dmg](https://github.com/project-hh-org/turtle-alert/releases/latest/download/TurtleAlert-arm64.dmg) |
+| 💻 Intel Mac | [TurtleAlert-x64.dmg](https://github.com/project-hh-org/turtle-alert/releases/latest/download/TurtleAlert-x64.dmg) |
 
-📦 [전체 릴리즈 보기](https://github.com/project-hh-com/turtle-alert/releases/latest)
+📦 [전체 릴리즈 보기](https://github.com/project-hh-org/turtle-alert/releases/latest)
 
 ## 📑 목차
 
@@ -39,8 +39,8 @@
 | **타입** | 메뉴바 상주 앱 (창 없음, Dock 숨김) |
 | **설치 위치** | `/Applications/거북이경보.app` |
 | **실행 스크립트** | `pnpm dev` |
-| **저장소** | [project-hh-com/turtle-alert](https://github.com/project-hh-com/turtle-alert) |
-| **이슈/건의** | [GitHub Issues](https://github.com/project-hh-com/turtle-alert/issues) |
+| **저장소** | [project-hh-org/turtle-alert](https://github.com/project-hh-org/turtle-alert) |
+| **이슈/건의** | [GitHub Issues](https://github.com/project-hh-org/turtle-alert/issues) |
 
 ---
 
@@ -142,7 +142,7 @@ turtle-alert/
 1. **AI 자세 검사 백엔드 누락 해결** — v0.6.0 에서 `@mediapipe/pose` 는 추가했지만 실제로는 `@tensorflow/tfjs-backend-cpu` 도 빠져있어 `createDetector` 단계에서 "No backend found in registry" 로 실패하던 문제. 백엔드 패키지 추가 + `tf.setBackend('cpu')` / `tf.ready()` 명시 호출
 
 ### v0.6.0 — AI 모델 로드 버그 수정 + Finder 한글 표시
-1. **AI 자세 검사 로드 실패 수정** — `@mediapipe/pose` 가 프로덕션 빌드에서 누락되어 트레이에서 AI 자세 검사를 켤 때 "TensorFlow.js 모델을 불러올 수 없습니다" 에러가 나던 문제 해결. 자세한 원인과 디버깅 과정은 [docs/2026-04-24-ai-posture-mediapipe.md](docs/2026-04-24-ai-posture-mediapipe.md) 참고
+1. **AI 자세 검사 로드 실패 수정** — `@mediapipe/pose` 가 프로덕션 빌드에서 누락되어 트레이에서 AI 자세 검사를 켤 때 "TensorFlow.js 모델을 불러올 수 없습니다" 에러가 나던 문제 해결. 자세한 원인과 디버깅 과정은 [site/2026-04-24-ai-posture-mediapipe.md](site/2026-04-24-ai-posture-mediapipe.md) 참고
 2. **Finder 앱 이름 한글 표시** — macOS SIGTRAP 회피를 위해 번들명을 영문(`TurtleAlert`) 으로 두되, `CFBundleDisplayName` + `.lproj` 로컬라이제이션으로 Finder/Dock/메뉴바 표시를 `거북이경보` 한글로 복원
 
 ### v0.5.x — 릴리즈 파이프라인 + imagesnap 번들

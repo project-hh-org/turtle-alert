@@ -29,6 +29,6 @@
 | 🍎 Apple Silicon (M1/M2/M3/M4) | TurtleAlert-arm64.dmg |
 | 💻 Intel | TurtleAlert-x64.dmg |
 
-⚠️ Apple Developer ID 서명이 없어 첫 실행 시 Gatekeeper 경고가 표시됩니다. [DOWNLOAD.md](https://github.com/project-hh-com/turtle-alert/blob/main/DOWNLOAD.md) 안내 참고.
+⚠️ Apple Developer ID 서명이 없어 첫 실행 시 Gatekeeper 경고가 표시됩니다. [DOWNLOAD.md](https://github.com/project-hh-org/turtle-alert/blob/main/DOWNLOAD.md) 안내 참고.
 
-**Full Changelog**: https://github.com/project-hh-com/turtle-alert/compare/v{PREV_VERSION}...v{VERSION}
+**Full Changelog**: https://github.com/project-hh-org/turtle-alert/compare/v{PREV_VERSION}...v{VERSION}
