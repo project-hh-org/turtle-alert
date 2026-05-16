@@ -627,9 +627,19 @@ function createAppCore(deps) {
       const isActuallyBad = !result.isGood && result.issues.length > 0 && !result.issues.includes("키포인트 신뢰도 부족");
       const isUncertain = result.issues.includes("키포인트 신뢰도 부족") || result.issues.includes("포즈를 감지하지 못했습니다") || result.issues.includes("어깨 간격이 너무 좁습니다");
 
+      _debugLogPosture("check", {
+        isGood: result.isGood,
+        issues: result.issues,
+        isActuallyBad,
+        isUncertain,
+        consecutiveBadCount,
+        threshold: CONSECUTIVE_BAD_THRESHOLD,
+      });
+
       if (isActuallyBad) {
         consecutiveBadCount++;
         if (consecutiveBadCount >= CONSECUTIVE_BAD_THRESHOLD) {
+          _debugLogPosture("ALERT sent", { issues: result.issues });
           sendPostureAlert(result.issues);
           // 알림 후에도 badPosture 유지 — 정자세 복귀까지 🐢 아이콘 유지
         }
@@ -641,9 +651,20 @@ function createAppCore(deps) {
         }
       }
       // isUncertain이면 현재 상태 유지 (판단 불가)
-    } catch {
+    } catch (err) {
+      _debugLogPosture("ERROR", { message: err && err.message });
       // 촬영/분석 실패 시 무시 (카메라 사용 중 등)
     }
+  }
+
+  function _debugLogPosture(label, data) {
+    try {
+      const logPath = path.join(require("os").tmpdir(), "turtle-posture-debug.log");
+      fs.appendFileSync(
+        logPath,
+        `[${new Date().toISOString()}] ${label} ${JSON.stringify(data)}\n`,
+      );
+    } catch (_) { /* ignore */ }
   }
 
   /* c8 ignore stop */
