@@ -4,7 +4,7 @@
 
 ## 📥 다운로드
 
-**사용자라면 👉 [DOWNLOAD.md](./DOWNLOAD.md)** 에서 설치 가이드를 확인하세요.
+**사용자라면 👉 [설치 가이드](https://turtle-alert.project-hh.com/#install)** 에서 한 페이지로 정리된 안내를 확인하세요.
 
 | 칩 | 바로 다운로드 |
 |---|---|
@@ -220,7 +220,7 @@ pnpm release:tag patch    # 0.5.0 -> 0.5.1 (또는 minor / major / 0.6.0)
 
 스크립트가 version bump → 커밋 → 태그 → push까지 처리하면, CI([release.yml](.github/workflows/release.yml))가 자동으로 빌드 + GitHub Release 생성 + 자산 업로드를 진행합니다.
 
-자산명은 `TurtleAlert-arm64.dmg`, `TurtleAlert-x64.dmg` (버전 없음)로 고정되어 [DOWNLOAD.md](DOWNLOAD.md)의 `releases/latest/download/` 링크가 다음 릴리즈에서도 그대로 작동합니다.
+자산명은 `TurtleAlert-arm64.dmg`, `TurtleAlert-x64.dmg` (버전 없음)로 고정되어 [설치 가이드](https://turtle-alert.project-hh.com/#install)의 `releases/latest/download/` 링크가 다음 릴리즈에서도 그대로 작동합니다.
 
 **로컬 빌드/업로드 (디버깅용)**:
 ```bash
