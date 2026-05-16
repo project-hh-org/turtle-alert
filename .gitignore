@@ -5,3 +5,6 @@ dist/
 *.log
 coverage/
 .agent/
+
+# README.md 에서 자동 생성되는 페이지 (CI 빌드 시 scripts/render-readme.sh 가 만든다)
+site/readme.html
