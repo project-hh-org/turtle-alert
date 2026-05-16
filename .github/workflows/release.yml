@@ -23,6 +23,12 @@ jobs:
       - run: pnpm test
 
       - name: Build DMGs (x64 + arm64)
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npx electron-builder --mac --x64 --arm64 --publish never
 
       - name: Rename DMGs to version-less names
@@ -67,16 +73,32 @@ jobs:
           git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/project-hh-org/homebrew-turtle-alert.git" "$TAP_DIR"
 
           CASK="$TAP_DIR/Casks/turtle-alert.rb"
-          # cask 파일에서 version과 두 sha256(arm → intel 순)을 in-place 치환.
-          # awk가 줄 단위로 처리하므로 YAML 들여쓰기/HEREDOC 이스케이프 이슈 없음.
+          # cask 파일에서 version과 두 sha256(arm → intel 순)을 in-place 치환하고,
+          # 노터라이즈 도입으로 더 이상 필요 없는 postflight(xattr 격리 해제) 블록과
+          # 그 위의 ad-hoc 서명 주석을 제거한다. awk가 줄 단위로 처리하므로
+          # YAML 들여쓰기/HEREDOC 이스케이프 이슈 없음.
           awk -v v="$VERSION" -v arm="$ARM_SHA" -v x64="$X64_SHA" '
+            BEGIN { skip = 0 }
+            # postflight do ... end 블록 통째로 스킵
+            /^[[:space:]]*postflight[[:space:]]+do[[:space:]]*$/ { skip = 1; next }
+            skip == 1 {
+              if ($0 ~ /^[[:space:]]*end[[:space:]]*$/) { skip = 0 }
+              next
+            }
+            # ad-hoc 서명 관련 주석 제거 (노터라이즈 후에는 의미 없음)
+            /^[[:space:]]*#[[:space:]]*ad-hoc signed/ { next }
+            # version 치환
             /^[[:space:]]*version[[:space:]]+"/ { sub(/"[^"]*"/, "\"" v "\""); print; next }
+            # sha256 치환 (첫 번째 = arm64, 두 번째 = x64)
             /sha256[[:space:]]+"/ {
               sub(/"[0-9a-f]{64}"/, "\"" (++n == 1 ? arm : x64) "\"")
               print; next
             }
             { print }
           ' "$CASK" > "$CASK.new" && mv "$CASK.new" "$CASK"
+
+          # 연속된 빈 줄 정리 (postflight 블록 제거 후 빈 줄이 두 개 이상 연속될 수 있음)
+          awk 'BEGIN{blank=0} /^[[:space:]]*$/ { if(blank){next} blank=1; print; next } { blank=0; print }' "$CASK" > "$CASK.new" && mv "$CASK.new" "$CASK"
 
           cd "$TAP_DIR"
           git config user.name "github-actions[bot]"

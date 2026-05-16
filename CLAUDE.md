@@ -178,7 +178,7 @@ cp -R "dist/mac-arm64/TurtleAlert.app" /Applications/
 - ❌ 영문 앱 이름으로 되돌리기 ("Alert or Turtle" 등)
 - ❌ Dock 아이콘 노출 (`app.dock.show()` 금지)
 - ❌ `node_modules`, `dist`, `.next` 커밋
-- ❌ 코드 서명/노터라이즈 관련 작업 (현재 개인 배포 수준)
+- ❌ `package.json` 의 `mac.identity`, `mac.hardenedRuntime`, `mac.notarize`, `mac.entitlements` 값을 임의로 끄거나 변경 — Apple Developer ID 서명 + 노터라이즈가 v0.7.4 부터 활성화되어 있으며 끄면 Gatekeeper "손상되었습니다" 경고가 다시 발생함. 인증서/노터라이즈 시크릿은 [release.yml](.github/workflows/release.yml) 의 `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_ID_PASSWORD`, `APPLE_TEAM_ID` 로 주입됨
 
 ---
 

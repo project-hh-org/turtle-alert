@@ -31,7 +31,11 @@
       "target": "dmg",
       "category": "public.app-category.healthcare-fitness",
       "icon": "assets/icon.png",
-      "identity": null,
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true,
       "extendInfo": {
         "CFBundleDisplayName": "거북이경보",
         "CFBundleDevelopmentRegion": "ko",

@@ -36,13 +36,7 @@ uname -m   # arm64 = Apple Silicon, x86_64 = Intel
 
 2. DMG 더블클릭 → **거북이경보 아이콘을 Applications 폴더로 드래그**
 
-3. **⚠️ 중요**: 이 앱은 Apple Developer ID 로 서명되지 않아 Gatekeeper가 **"손상되어 열 수 없습니다"** 경고를 표시합니다. 터미널에서 아래 한 줄을 실행해 격리 속성을 제거하세요:
-
-```bash
-xattr -dr com.apple.quarantine /Applications/TurtleAlert.app
-```
-
-이후로는 Finder 더블클릭으로 정상 실행됩니다.
+3. Finder 에서 더블클릭으로 정상 실행됩니다 — Apple Developer ID 로 서명 및 노터라이즈가 되어 있어 Gatekeeper 경고 없이 바로 열립니다.
 
 > 📝 `TurtleAlert.app` 은 내부 번들 이름이고, 실제로 앱을 열면 "거북이경보" 로 표시됩니다.
 
