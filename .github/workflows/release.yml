@@ -50,3 +50,41 @@ jobs:
               --title "거북이경보 ${GITHUB_REF_NAME}" \
               --generate-notes
           fi
+
+      - name: Update Homebrew cask
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "HOMEBREW_TAP_TOKEN not set — skipping cask update"
+            exit 0
+          fi
+          VERSION="${GITHUB_REF_NAME#v}"
+          ARM_SHA="$(shasum -a 256 release/TurtleAlert-arm64.dmg | awk '{print $1}')"
+          X64_SHA="$(shasum -a 256 release/TurtleAlert-x64.dmg   | awk '{print $1}')"
+
+          TAP_DIR="$(mktemp -d)/homebrew-turtle-alert"
+          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/project-hh-org/homebrew-turtle-alert.git" "$TAP_DIR"
+
+          CASK="$TAP_DIR/Casks/turtle-alert.rb"
+          # cask 파일에서 version과 두 sha256(arm → intel 순)을 in-place 치환.
+          # awk가 줄 단위로 처리하므로 YAML 들여쓰기/HEREDOC 이스케이프 이슈 없음.
+          awk -v v="$VERSION" -v arm="$ARM_SHA" -v x64="$X64_SHA" '
+            /^[[:space:]]*version[[:space:]]+"/ { sub(/"[^"]*"/, "\"" v "\""); print; next }
+            /sha256[[:space:]]+"/ {
+              sub(/"[0-9a-f]{64}"/, "\"" (++n == 1 ? arm : x64) "\"")
+              print; next
+            }
+            { print }
+          ' "$CASK" > "$CASK.new" && mv "$CASK.new" "$CASK"
+
+          cd "$TAP_DIR"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/turtle-alert.rb
+          if git diff --cached --quiet; then
+            echo "Cask already up to date — nothing to commit"
+          else
+            git commit -m "feat: bump turtle-alert cask to v${VERSION}"
+            git push origin main
+          fi
