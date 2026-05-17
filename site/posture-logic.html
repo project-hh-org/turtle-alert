@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>거북이경보 — 자세 판정 로직</title>
+  <meta name="description" content="MoveNet 키포인트로 거북목·구부정한 자세를 어떻게 판정하는가. 절대 임계값, 사용자 캘리브레이션 baseline, 강/약 신호 트리 설명." />
+  <meta property="og:title" content="거북이경보 — 자세 판정 로직" />
+  <meta property="og:description" content="MoveNet 키포인트로 거북목·구부정한 자세를 어떻게 판정하는가." />
+  <meta property="og:image" content="https://turtle-alert.project-hh.com/icon.png" />
+  <meta property="og:type" content="article" />
+  <link rel="icon" type="image/png" href="icon.png" />
+  <style>
+    :root {
+      --bg: #0f1419;
+      --bg-soft: #1a2028;
+      --card: #1f2630;
+      --border: #2d3642;
+      --text: #e8eef5;
+      --text-dim: #9aa5b1;
+      --accent: #4ade80;
+      --accent-hover: #22c55e;
+      --warn: #fbbf24;
+      --danger: #f87171;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro KR", "Pretendard", "Apple SD Gothic Neo", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Top bar */
+    .topbar {
+      position: sticky; top: 0; z-index: 10;
+      background: rgba(15, 20, 25, 0.85);
+      backdrop-filter: saturate(180%) blur(12px);
+      -webkit-backdrop-filter: saturate(180%) blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+    .topbar-inner {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 14px 24px;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 16px;
+    }
+    .brand {
+      display: inline-flex; align-items: center; gap: 10px;
+      color: var(--text); text-decoration: none; font-weight: 700;
+      font-size: 15px;
+    }
+    .brand img { width: 24px; height: 24px; }
+    .topbar nav { display: flex; gap: 18px; font-size: 14px; }
+    .topbar nav a {
+      color: var(--text-dim); text-decoration: none;
+      transition: color 0.15s;
+    }
+    .topbar nav a:hover { color: var(--accent); }
+
+    main {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 48px 24px 80px;
+    }
+
+    h1 {
+      font-size: 36px; font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 14px;
+    }
+    .subtitle {
+      font-size: 17px;
+      color: var(--text-dim);
+      margin-bottom: 36px;
+    }
+
+    h2 {
+      font-size: 24px; font-weight: 700;
+      letter-spacing: -0.01em;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+      margin: 48px 0 18px;
+    }
+    h3 {
+      font-size: 18px; font-weight: 700;
+      margin: 28px 0 12px;
+      color: var(--text);
+    }
+    p { color: var(--text-dim); margin: 12px 0; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { color: var(--accent-hover); text-decoration: underline; }
+    strong { color: var(--text); font-weight: 700; }
+
+    /* TOC */
+    .toc {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 24px;
+      margin: 24px 0 32px;
+      font-size: 14px;
+    }
+    .toc ol { padding-left: 22px; color: var(--text-dim); }
+    .toc li { margin: 4px 0; }
+    .toc a { color: var(--text-dim); }
+    .toc a:hover { color: var(--accent); }
+
+    /* Cards / callout */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin: 14px 0;
+    }
+    .callout {
+      border-left: 3px solid var(--warn);
+      background: rgba(251, 191, 36, 0.06);
+      padding: 14px 18px;
+      border-radius: 0 8px 8px 0;
+      margin: 14px 0;
+      color: var(--text-dim);
+    }
+    .callout.danger {
+      border-left-color: var(--danger);
+      background: rgba(248, 113, 113, 0.07);
+    }
+    .callout strong { color: var(--text); }
+
+    /* Tables */
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 14px 0;
+      font-size: 14px;
+    }
+    th, td {
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: var(--bg-soft);
+      color: var(--text);
+      font-weight: 600;
+    }
+    td { color: var(--text-dim); }
+    td code { font-size: 12px; }
+
+    /* Code */
+    code {
+      background: var(--bg-soft);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: var(--accent);
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 13px;
+    }
+    pre {
+      background: var(--bg-soft);
+      border: 1px solid var(--border);
+      padding: 14px 16px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin: 14px 0;
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 13px;
+    }
+    pre code { background: none; padding: 0; color: var(--text); }
+
+    /* Lists */
+    ul, ol { margin: 12px 0 12px 22px; color: var(--text-dim); }
+    li { margin: 6px 0; }
+
+    /* Signal flow diagram (ASCII-ish boxes) */
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin: 18px 0;
+    }
+    .flow-step {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+    .flow-step .num {
+      display: inline-block;
+      width: 26px; height: 26px;
+      background: var(--accent);
+      color: #0a1f14;
+      border-radius: 50%;
+      text-align: center; line-height: 26px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .flow-step strong { display: block; margin-bottom: 4px; }
+    .flow-step span { color: var(--text-dim); font-size: 13px; }
+
+    .label {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+      margin-right: 6px;
+    }
+    .label-turtle { background: rgba(248, 113, 113, 0.20); color: #fca5a5; }
+    .label-slouch { background: rgba(251, 191, 36, 0.20); color: #fde68a; }
+    .label-good   { background: rgba(74, 222, 128, 0.20); color: #86efac; }
+    .label-unc    { background: rgba(154, 165, 177, 0.20); color: var(--text-dim); }
+
+    @media (max-width: 600px) {
+      main { padding: 32px 18px 60px; }
+      h1 { font-size: 28px; }
+      h2 { font-size: 20px; margin-top: 36px; }
+      h3 { font-size: 16px; }
+      .topbar nav { gap: 12px; font-size: 13px; }
+      .topbar-inner { padding: 12px 18px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="./">
+        <img src="icon.png" alt="거북이경보" />
+        <span>거북이경보</span>
+      </a>
+      <nav>
+        <a href="./">홈</a>
+        <a href="readme.html">README</a>
+        <a href="https://github.com/project-hh-org/turtle-alert" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <h1>🧠 자세 판정 로직</h1>
+    <p class="subtitle">
+      거북이경보가 웹캠 한 장으로 어떻게 거북목과 구부정한 자세를 가려내는지,
+      그리고 사용자 캘리브레이션이 왜 단순 임계값보다 정확한지 정리한 문서입니다.
+    </p>
+
+    <div class="toc">
+      <strong>목차</strong>
+      <ol>
+        <li><a href="#input">1. 입력 — MoveNet 키포인트</a></li>
+        <li><a href="#metrics">2. 정규화된 지표 계산</a></li>
+        <li><a href="#absolute">3. 절대 임계값 모드 (기본)</a></li>
+        <li><a href="#baseline">4. 캘리브레이션 모드 (권장)</a></li>
+        <li><a href="#tree">5. 판정 트리 — 강/약/이중 신호</a></li>
+        <li><a href="#uncertain">6. 불확실(uncertain) 처리</a></li>
+        <li><a href="#tradeoffs">7. 트레이드오프와 한계</a></li>
+      </ol>
+    </div>
+
+    <h2 id="input">1. 입력 — MoveNet 키포인트</h2>
+    <p>
+      TensorFlow.js 의 <strong>MoveNet SINGLEPOSE_LIGHTNING</strong> 모델로 웹캠 한 프레임에서
+      17 개 키포인트(코·눈·귀·어깨·팔꿈치·손목·엉덩이·무릎·발목)와 각각의 신뢰도(score)를 얻습니다.
+      자세 판정에 실제로 쓰는 건 그중 5 개입니다.
+    </p>
+    <table>
+      <thead><tr><th>키포인트</th><th>역할</th></tr></thead>
+      <tbody>
+        <tr><td><code>nose</code></td><td>고개의 수직 위치 — 코가 어깨에 가까울수록 고개가 숙여진 신호</td></tr>
+        <tr><td><code>left_shoulder</code> / <code>right_shoulder</code></td><td>기준점이자 거리 정규화 단위. 두 어깨 사이 너비로 모든 비율을 나눠 카메라 거리 영향을 제거</td></tr>
+        <tr><td><code>left_ear</code> / <code>right_ear</code></td><td>거북목 보조 신호. 정면 카메라에서 거북목이 심해질수록 귀가 어깨 높이에 가까워짐</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="metrics">2. 정규화된 지표 계산</h2>
+    <p>
+      픽셀 좌표를 그대로 쓰면 카메라 거리에 따라 값이 출렁입니다. 모든 지표는
+      <strong>어깨 너비</strong>로 나눠 카메라와 사용자 거리에 무관한 비율로 변환합니다.
+    </p>
+    <pre><code>shoulderWidth   = |leftShoulder.x − rightShoulder.x|
+shoulderMidY    = (leftShoulder.y + rightShoulder.y) / 2
+
+noseShoulderRatio = (shoulderMidY − nose.y) / shoulderWidth
+earShoulderRatio  = (shoulderMidY − ear.y) / shoulderWidth
+shoulderTilt      = |leftShoulder.y − rightShoulder.y| / shoulderWidth
+noseOffset        = |nose.x − shoulderMidX| / shoulderWidth
+headTilt          = |leftEar.y − rightEar.y| / shoulderWidth</code></pre>
+    <p>
+      비율이 <strong>클수록 머리가 어깨 위로 충분히 들려있는 좋은 자세</strong>,
+      작아질수록 코·귀가 어깨 높이로 내려와 거북목·구부정 신호가 됩니다.
+    </p>
+
+    <h2 id="absolute">3. 절대 임계값 모드 (기본)</h2>
+    <p>
+      캘리브레이션을 한 적이 없는 사용자에게 적용되는 fallback. 통계적으로
+      "대부분의 사람에게 거북목으로 보이는 구간"을 정해둔 값입니다.
+    </p>
+    <table>
+      <thead><tr><th>지표</th><th>약 임계값</th><th>강 임계값</th></tr></thead>
+      <tbody>
+        <tr><td>noseShoulderRatio</td><td><code>&lt; 0.55</code></td><td><code>&lt; 0.40</code> (단독 거북목)</td></tr>
+        <tr><td>earShoulderRatio</td><td><code>&lt; 0.20</code></td><td><code>&lt; 0.10</code> (단독 거북목)</td></tr>
+        <tr><td>shoulderTilt</td><td colspan="2"><code>&gt; 0.08</code></td></tr>
+        <tr><td>headTilt</td><td colspan="2"><code>&gt; 0.08</code></td></tr>
+        <tr><td>noseOffset</td><td colspan="2"><code>&gt; 0.12</code></td></tr>
+        <tr><td>slouchRatio (구부정 단독)</td><td colspan="2"><code>noseShoulderRatio &lt; 0.70</code></td></tr>
+      </tbody>
+    </table>
+    <div class="callout">
+      <strong>왜 두 종류 임계값인가?</strong>
+      코든 귀든 한쪽 신호가 매우 강하게 잡히면 다른 신호가 약해도 거북목으로 보는 게 자연스럽습니다.
+      이전 버전은 두 신호가 모두 걸려야 거북목이라 라벨링해서, 실제 거북목인 사용자가
+      <em>"구부정한 자세"</em>로만 누적 알림 카운트만 채우는 케이스가 있었습니다.
+    </div>
+
+    <h2 id="baseline">4. 캘리브레이션 모드 (권장)</h2>
+    <p>
+      사용자가 트레이에서 <strong>📸 지금 자세를 기준으로 저장</strong>을 누르면 그 시점의
+      지표가 <code>baseline</code>으로 저장됩니다. 이후 매 검사 때는 절대 임계값 대신
+      <strong>baseline 대비 변화량(delta)</strong>으로 평가합니다.
+    </p>
+    <table>
+      <thead><tr><th>신호</th><th>약 임계값 (drop)</th><th>강 임계값 (drop)</th></tr></thead>
+      <tbody>
+        <tr><td>noseShoulderRatio drop</td><td><code>&gt; 0.10</code></td><td><code>&gt; 0.20</code></td></tr>
+        <tr><td>earShoulderRatio drop</td><td><code>&gt; 0.06</code></td><td><code>&gt; 0.15</code></td></tr>
+        <tr><td>shoulderTilt 증가</td><td colspan="2"><code>&gt; 0.04</code></td></tr>
+        <tr><td>headTilt 증가</td><td colspan="2"><code>&gt; 0.04</code></td></tr>
+        <tr><td>noseOffset 증가</td><td colspan="2"><code>&gt; 0.05</code></td></tr>
+      </tbody>
+    </table>
+    <p>
+      절대 임계값보다 훨씬 작은 변화량으로도 잡을 수 있는 이유는, 같은 사람·같은 카메라
+      환경 안에서 비교하기 때문입니다. "내 평소보다 얼마나 나빠졌나"라는 질문에
+      훨씬 강한 SNR(신호 대 잡음비)을 가집니다.
+    </p>
+
+    <div class="callout">
+      <strong>baseline 으로 저장될 수 있는 자세는 다음 조건을 만족해야 합니다.</strong>
+      <ul>
+        <li><code>noseShoulderRatio &gt; 0.70</code> — 이미 구부정하지 않음</li>
+        <li><code>earShoulderRatio &gt; 0.20</code> — 이미 고개가 숙여지지 않음</li>
+        <li><code>shoulderTilt ≤ 0.08</code> — 양쪽 어깨 높이가 비슷함</li>
+        <li>모든 키포인트 신뢰도 ≥ 0.3</li>
+      </ul>
+      나쁜 자세를 baseline 으로 잡아 거북목이 영영 안 잡히는 사고를 방지합니다.
+    </div>
+
+    <h2 id="tree">5. 판정 트리 — 강/약/이중 신호</h2>
+    <p>
+      절대 모드와 캘리브레이션 모드 둘 다 동일한 트리를 따릅니다. 한 라벨만 부여되는
+      배타적 트리입니다.
+    </p>
+    <div class="flow">
+      <div class="flow-step">
+        <span class="num">1</span>
+        <strong>강 단독 신호</strong>
+        <span>코 또는 귀가 강 임계값을 넘으면 → <span class="label label-turtle">거북목</span></span>
+      </div>
+      <div class="flow-step">
+        <span class="num">2</span>
+        <strong>약 이중 신호</strong>
+        <span>코 약 임계 AND 귀 약 임계 → <span class="label label-turtle">거북목</span></span>
+      </div>
+      <div class="flow-step">
+        <span class="num">3</span>
+        <strong>약 단독 신호</strong>
+        <span>코 또는 귀 단독 약 임계 → <span class="label label-slouch">구부정한 자세</span></span>
+      </div>
+      <div class="flow-step">
+        <span class="num">4</span>
+        <strong>그 외</strong>
+        <span><span class="label label-good">정상</span></span>
+      </div>
+    </div>
+
+    <p>거북목 / 구부정한 자세 라벨링과 <em>독립적으로</em> 다음 부가 라벨이 함께 붙을 수 있습니다.</p>
+    <ul>
+      <li><strong>어깨 기울어짐</strong> — shoulderTilt 임계 초과</li>
+      <li><strong>고개 기울어짐</strong> — 좌우 귀 y 차이 임계 초과</li>
+      <li><strong>고개 회전</strong> — 좌우 귀 신뢰도 차이가 큼 (한쪽 귀가 안 보이는 정도로 돌아감)</li>
+      <li><strong>한쪽으로 기울어짐</strong> — 코 x 가 어깨 중심선에서 벗어남</li>
+    </ul>
+
+    <h2 id="uncertain">6. 불확실(uncertain) 처리</h2>
+    <p>
+      코·어깨 키포인트 신뢰도가 0.3 미만이거나 두 어깨 사이가 10픽셀 미만으로 잡히면
+      <span class="label label-unc">uncertain</span> 모드로 분류해 <strong>알림을 보내지 않습니다</strong>.
+      카메라 앞에 사람이 없거나 프레임 밖으로 어깨가 잘린 상황에서 잘못된 판정을 누적하는 걸 막기 위함입니다.
+    </p>
+    <div class="callout">
+      <strong>주의</strong> — 거북목이 심한 사람일수록 모니터 쪽으로 몸을 굽히게 되어 어깨가
+      프레임에서 잘려 uncertain 비중이 높아질 수 있습니다. 이 경우 카메라 위치를
+      조금 더 멀리 두거나 노트북 받침대를 높이면 검출률이 올라갑니다.
+    </div>
+
+    <h2 id="tradeoffs">7. 트레이드오프와 한계</h2>
+    <ul>
+      <li>
+        <strong>정면 카메라 1장만 사용</strong> — 임상적 거북목 판정 지표인 CVA
+        (Craniovertebral Angle, 측면 사진의 C7-귀 각도) 를 직접 계산할 수 없습니다.
+        정면에서 보이는 코·귀의 수직 위치 변화를 프록시로 씁니다.
+      </li>
+      <li>
+        <strong>화면 가까이서 몸을 굽히는 자세</strong>는 어깨가 프레임에서 잘려
+        uncertain 으로 빠질 수 있습니다. 이때는 카메라 위치 조정 + 캘리브레이션이 가장 효과적입니다.
+      </li>
+      <li>
+        <strong>로컬 추론 (CPU)</strong> — 모든 키포인트 추정은 사용자 기기에서만 수행되고
+        외부 서버로 이미지가 전송되지 않습니다. 정확도-속도 트레이드오프에서
+        MoveNet Lightning 을 택해 사용자 기기 부담을 최소화했습니다.
+      </li>
+      <li>
+        <strong>연속 N 회 임계</strong> — 한 번의 false positive 로 사용자를 깨우지 않도록
+        연속 2 회 이상 나쁜 자세가 감지될 때만 알림을 보냅니다.
+      </li>
+    </ul>
+
+    <p style="margin-top:48px;">
+      <a href="readme.html">📖 README 전체 보기</a> ·
+      <a href="https://github.com/project-hh-org/turtle-alert/blob/main/lib/posture-detector.js" target="_blank" rel="noopener">소스 코드 (posture-detector.js)</a>
+    </p>
+  </main>
+</body>
+</html>

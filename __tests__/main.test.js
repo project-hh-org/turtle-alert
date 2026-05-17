@@ -175,7 +175,16 @@ describe("createAppCore", () => {
       expect(() => core.updateTrayTitle()).not.toThrow();
     });
 
-    it("should show 🐢 when running in alarm-only mode", () => {
+    it("should show 🐢 with timer when running in alarm-only mode", () => {
+      const t = { setTitle: vi.fn() };
+      core.setState({ tray: t, isRunning: true, remainSec: 125 });
+      core.updateTrayTitle();
+      // showTimerInTray 기본값(true) + isRunning → "🐢 MM:SS"
+      expect(t.setTitle).toHaveBeenCalledWith("🐢 02:05");
+    });
+
+    it("should hide timer when showTimerInTray is disabled", () => {
+      storeData.showTimerInTray = false;
       const t = { setTitle: vi.fn() };
       core.setState({ tray: t, isRunning: true, remainSec: 125 });
       core.updateTrayTitle();
@@ -589,7 +598,9 @@ describe("createAppCore", () => {
       core.sendAlert();
       vi.advanceTimersByTime(10500);
       const lastCall = mockTray.setTitle.mock.calls.at(-1)[0];
-      expect(lastCall).toBe("🐢");
+      // 타이머가 실행 중이므로 "🐢 MM:SS" 형태로 복귀
+      expect(lastCall.startsWith("🐢")).toBe(true);
+      expect(lastCall).not.toContain("🙌🏻");
     });
 
     it("should show 🐢 when bad posture detected in AI mode", () => {
@@ -615,7 +626,8 @@ describe("createAppCore", () => {
       core.setPostureBad();
       vi.advanceTimersByTime(1000);
       const calls = mockTray.setTitle.mock.calls.map((c) => c[0]);
-      expect(calls.some((c) => c === "🐢")).toBe(true);
+      // 타이머 동작 중이므로 "🐢" 또는 "🐢 MM:SS" 가 보여야 함
+      expect(calls.some((c) => c.startsWith("🐢"))).toBe(true);
     });
 
     it("should prioritize 🙌🏻 over 🐢 during stretch alert", () => {

@@ -43,6 +43,7 @@ const { execFile } = require("child_process");
 const {
   initDetector,
   captureAndAnalyze,
+  captureBaseline,
   disposeDetector,
 } = require("./lib/posture-capture");
 const {
@@ -282,7 +283,11 @@ function createAppCore(deps) {
 
   function updateTrayTitle() {
     if (!tray) return;
-    tray.setTitle(getTrayIcon());
+    const icon = getTrayIcon();
+    // 타이머가 실행 중이고 사용자가 메뉴바 시간 표시를 켰을 때만 "🐢 MM:SS" 로 함께 노출.
+    // 알림 직후 박수 이모지를 띄우는 동안엔 시간은 잠시 숨김 (시각적 강조).
+    const showTimer = isRunning && store.get("showTimerInTray") !== false && !alertFlashTimer;
+    tray.setTitle(showTimer ? `${icon} ${formatTime(remainSec)}` : icon);
   }
 
   function startTimer(intervalMin) {
@@ -519,7 +524,39 @@ function createAppCore(deps) {
               { label: "5분", type: "radio", checked: store.get("postureCheckInterval") === 300, click: () => { store.set("postureCheckInterval", 300); if (store.get("postureCheckEnabled")) startPostureCheck(); updateTrayMenu(); } },
             ],
           },
-        ],
+          { type: "separator" },
+          {
+            label: store.get("postureBaseline")
+              ? `📸 기준 자세 재설정 (${new Date(store.get("postureBaseline").capturedAt).toLocaleDateString("ko-KR")} 저장됨)`
+              : "📸 지금 자세를 기준으로 저장",
+            enabled: imagesnapAvailable && postureDetectorReady,
+            click: () => runBaselineCalibration(),
+          },
+          store.get("postureBaseline") && {
+            label: "기준 자세 초기화 (절대 임계값으로 복귀)",
+            click: () => {
+              store.delete("postureBaseline");
+              const notice = new Notification({
+                title: "📸 기준 자세 초기화 완료",
+                body: "절대 임계값 모드로 복귀했습니다.",
+                silent: true,
+              });
+              notice.show();
+              updateTrayMenu();
+            },
+          },
+        ].filter(Boolean),
+      },
+      {
+        label: "메뉴바에 남은 시간 표시",
+        type: "checkbox",
+        checked: store.get("showTimerInTray") !== false,
+        click: () => {
+          const newValue = !(store.get("showTimerInTray") !== false);
+          store.set("showTimerInTray", newValue);
+          updateTrayTitle();
+          updateTrayMenu();
+        },
       },
       {
         label: "로그인 시 자동 실행",
@@ -623,13 +660,20 @@ function createAppCore(deps) {
     if (!postureDetectorReady) return;
 
     try {
-      const result = await captureAndAnalyze();
+      const baseline = store.get("postureBaseline") || undefined;
+      const result = await captureAndAnalyze(baseline);
       const isActuallyBad = !result.isGood && result.issues.length > 0 && !result.issues.includes("키포인트 신뢰도 부족");
-      const isUncertain = result.issues.includes("키포인트 신뢰도 부족") || result.issues.includes("포즈를 감지하지 못했습니다") || result.issues.includes("어깨 간격이 너무 좁습니다");
+      const isUncertain = result.mode === "uncertain"
+        || result.issues.includes("키포인트 신뢰도 부족")
+        || result.issues.includes("포즈를 감지하지 못했습니다")
+        || result.issues.includes("어깨 간격이 너무 좁습니다");
 
       _debugLogPosture("check", {
+        mode: result.mode,
+        hasBaseline: !!baseline,
         isGood: result.isGood,
         issues: result.issues,
+        metrics: result.metrics,
         isActuallyBad,
         isUncertain,
         consecutiveBadCount,
@@ -665,6 +709,70 @@ function createAppCore(deps) {
         `[${new Date().toISOString()}] ${label} ${JSON.stringify(data)}\n`,
       );
     } catch (_) { /* ignore */ }
+  }
+
+  async function runBaselineCalibration() {
+    if (!imagesnapAvailable) {
+      const notice = new Notification({
+        title: "📸 카메라 사용 불가",
+        body: "imagesnap 바이너리를 찾지 못해 기준 자세를 저장할 수 없습니다.",
+        silent: true,
+      });
+      notice.show();
+      return;
+    }
+    // 자세 검사 미활성 상태에서도 캘리브레이션은 가능하도록 detector 로딩 시도
+    if (!postureDetectorReady) {
+      await loadPostureDetector();
+      if (!postureDetectorReady) {
+        const failNotice = new Notification({
+          title: "🤖 모델 로드 실패",
+          body: "TensorFlow.js 모델을 불러올 수 없어 기준 자세를 저장하지 못했습니다.",
+          silent: true,
+        });
+        failNotice.show();
+        return;
+      }
+    }
+
+    // 사용자에게 3초 후 촬영을 알림
+    const heads = new Notification({
+      title: "📸 곧 기준 자세를 촬영합니다",
+      body: "3초 안에 바른 자세로 카메라 정면을 봐주세요.",
+      silent: false,
+    });
+    heads.show();
+    await new Promise((r) => setTimeout(r, 3000));
+
+    try {
+      const result = await captureBaseline();
+      _debugLogPosture("baseline-capture", result);
+      if (!result.ok) {
+        const failNotice = new Notification({
+          title: "📸 기준 자세 저장 실패",
+          body: result.reason,
+          silent: true,
+        });
+        failNotice.show();
+        return;
+      }
+      store.set("postureBaseline", result.baseline);
+      const okNotice = new Notification({
+        title: "📸 기준 자세 저장 완료",
+        body: "이제 이 자세를 기준으로 거북목·구부정 여부를 더 정확히 감지합니다.",
+        silent: false,
+      });
+      okNotice.show();
+      updateTrayMenu();
+    } catch (err) {
+      _debugLogPosture("baseline-error", { message: err && err.message });
+      const errNotice = new Notification({
+        title: "📸 기준 자세 저장 오류",
+        body: "촬영 중 오류가 발생했습니다. 다시 시도해주세요.",
+        silent: true,
+      });
+      errNotice.show();
+    }
   }
 
   /* c8 ignore stop */

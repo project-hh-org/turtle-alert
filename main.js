@@ -50,6 +50,8 @@ app.whenReady().then(() => {
       snapshotRetentionDays: 30,
       postureCheckEnabled: false,
       postureCheckInterval: 40,
+      postureBaseline: null,
+      showTimerInTray: true,
     },
     clearInvalidConfig: true,
   });
