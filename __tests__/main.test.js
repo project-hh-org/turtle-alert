@@ -115,7 +115,11 @@ describe("createAppCore", () => {
     mockApp = { quit: vi.fn(), setLoginItemSettings: vi.fn() };
     mockShell = { openPath: vi.fn() };
     storeData = { intervalMin: 30, alertCount: 0, lastResetDate: new Date("2026-04-17").toDateString(), autoStart: false, soundEnabled: true, snapshotEnabled: false, snapshotSavePath: "/tmp/test-snap" };
-    mockStore = { get: vi.fn((k) => storeData[k]), set: vi.fn((k, v) => { storeData[k] = v; }) };
+    mockStore = {
+      get: vi.fn((k) => storeData[k]),
+      set: vi.fn((k, v) => { storeData[k] = v; }),
+      delete: vi.fn((k) => { delete storeData[k]; }),
+    };
     core = createAppCore({ Notification: mockNotification, Menu: mockMenu, app: mockApp, store: mockStore, shell: mockShell });
   });
 
@@ -363,6 +367,68 @@ describe("createAppCore", () => {
     it("should start with 1hour interval", () => { getTemplate().find((i) => i.label === "알림 간격").submenu.find((i) => i.label === "1시간").click(); expect(storeData.intervalMin).toBe(60); });
     it("should toggle snapshot", () => { storeData.snapshotEnabled = false; core.setState({ tray: mockTray, imagesnapAvailable: true }); getTemplate().find((i) => i.label?.includes("자세 스냅샷")).click(); expect(storeData.snapshotEnabled).toBe(true); });
     it("should open snapshot folder", () => { storeData.snapshotSavePath = "/tmp/test-snap"; getTemplate().find((i) => i.label?.includes("스냅샷 폴더")).click(); expect(mockShell.openPath).toHaveBeenCalledWith("/tmp/test-snap"); });
+
+    // 감시 모드(하위 submenu) 안의 click 핸들러들
+    function getPostureSubmenu() {
+      return getTemplate().find((i) => i.label === "감시 모드").submenu;
+    }
+
+    it("should toggle showTimerInTray (default true → false)", () => {
+      storeData.showTimerInTray = true;
+      const item = getTemplate().find((i) => i.label === "메뉴바에 남은 시간 표시");
+      expect(item.checked).toBe(true);
+      item.click();
+      expect(storeData.showTimerInTray).toBe(false);
+    });
+
+    it("should toggle showTimerInTray (false → true)", () => {
+      storeData.showTimerInTray = false;
+      const item = getTemplate().find((i) => i.label === "메뉴바에 남은 시간 표시");
+      expect(item.checked).toBe(false);
+      item.click();
+      expect(storeData.showTimerInTray).toBe(true);
+    });
+
+    it("should expose calibration menu when AI is ready", () => {
+      core.setState({ tray: mockTray, imagesnapAvailable: true, postureDetectorReady: true });
+      const item = getPostureSubmenu().find((i) => i.label && i.label.startsWith("📸"));
+      expect(item).toBeDefined();
+      expect(item.enabled).toBe(true);
+    });
+
+    it("calibration menu is disabled when imagesnap unavailable", () => {
+      core.setState({ tray: mockTray, imagesnapAvailable: false, postureDetectorReady: true });
+      const item = getPostureSubmenu().find((i) => i.label && i.label.startsWith("📸"));
+      expect(item.enabled).toBe(false);
+    });
+
+    it("baseline reset menu appears only when baseline is set", () => {
+      storeData.postureBaseline = null;
+      expect(getPostureSubmenu().find((i) => i.label === "기준 자세 초기화 (절대 임계값으로 복귀)")).toBeUndefined();
+
+      storeData.postureBaseline = { capturedAt: "2026-05-01T00:00:00Z", metrics: {} };
+      const resetItem = getPostureSubmenu().find((i) => i.label === "기준 자세 초기화 (절대 임계값으로 복귀)");
+      expect(resetItem).toBeDefined();
+    });
+
+    it("baseline reset click clears postureBaseline", () => {
+      storeData.postureBaseline = { capturedAt: "2026-05-01T00:00:00Z", metrics: {} };
+      const resetItem = getPostureSubmenu().find((i) => i.label === "기준 자세 초기화 (절대 임계값으로 복귀)");
+      resetItem.click();
+      expect(storeData.postureBaseline).toBeUndefined();
+    });
+
+    it("calibration menu label shows date when baseline exists", () => {
+      storeData.postureBaseline = { capturedAt: "2026-05-01T00:00:00Z", metrics: {} };
+      const item = getPostureSubmenu().find((i) => i.label && i.label.startsWith("📸"));
+      expect(item.label).toContain("재설정");
+    });
+
+    it("calibration menu label is 'save' when no baseline", () => {
+      storeData.postureBaseline = null;
+      const item = getPostureSubmenu().find((i) => i.label && i.label.startsWith("📸"));
+      expect(item.label).toBe("📸 지금 자세를 기준으로 저장");
+    });
   });
 
   describe("handleResume", () => {

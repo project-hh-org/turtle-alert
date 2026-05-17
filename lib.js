@@ -824,6 +824,8 @@ function createAppCore(deps) {
       if ("nextAlertTime" in state) nextAlertTime = state.nextAlertTime;
       if ("imagesnapAvailable" in state) imagesnapAvailable = state.imagesnapAvailable;
       if ("snapshotFailCount" in state) snapshotFailCount = state.snapshotFailCount;
+      if ("postureDetectorReady" in state) postureDetectorReady = state.postureDetectorReady;
+      if ("postureDetectorLoading" in state) postureDetectorLoading = state.postureDetectorLoading;
     },
   };
 }
