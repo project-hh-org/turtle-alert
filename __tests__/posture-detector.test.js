@@ -4,9 +4,11 @@ const {
   evaluatePosture,
   computeMetrics,
   validateBaselineCandidate,
+  isCameraShifted,
   findKeypoint,
   POSTURE_THRESHOLD,
   BASELINE_DELTA,
+  CAMERA_SHIFT_RATIO,
   MIN_KEYPOINT_SCORE,
   CONSECUTIVE_BAD_THRESHOLD,
   DEFAULT_CHECK_INTERVAL_SEC,
@@ -284,7 +286,7 @@ describe("evaluatePosture (baseline mode)", () => {
   });
 
   it("detects turtle neck when nose+ear weak drops fire together", () => {
-    // baseline noseRatio=1.2 / earRatio=1.15. 둘 다 약 임계(0.10/0.06) 초과 drop
+    // baseline noseRatio=1.2 / earRatio=1.15. 둘 다 약 임계(0.12/0.08) 초과 drop
     const now = createKeypoints({
       nose: { name: "nose", x: 160, y: 95, score: 0.9 },          // ratio=1.05 drop=0.15
       left_ear: { name: "left_ear", x: 145, y: 100, score: 0.9 }, // ratio=1.00 drop=0.15
@@ -304,28 +306,37 @@ describe("evaluatePosture (baseline mode)", () => {
   });
 
   it("weak single drop → 구부정 (not 거북목)", () => {
-    // 코만 약 drop (0.10 ~ 0.20 사이)
+    // 코만 약 drop (약 임계 0.12 초과, 강 임계 0.20 미만)
     const now = createKeypoints({
-      nose: { name: "nose", x: 160, y: 92, score: 0.9 },  // ratio=1.08 drop=0.12
+      nose: { name: "nose", x: 160, y: 95, score: 0.9 },  // ratio=1.05 drop=0.15
     });
     const result = evaluatePosture(now, baseline);
     expect(result.issues).toContain("구부정한 자세");
     expect(result.issues).not.toContain("거북목");
   });
 
-  it("detects shoulder tilt increase against baseline", () => {
-    // baseline shoulderTilt=0, now=0.05 → delta 0.05 > 0.04
+  it("very small drop should NOT trigger any label (false positive 방지)", () => {
+    // drop 0.05 — slouch 임계 0.08 미만, weak 임계 0.12 미만 → 정상.
     const now = createKeypoints({
-      left_shoulder: { name: "left_shoulder", x: 110, y: 195, score: 0.9 },
+      nose: { name: "nose", x: 160, y: 85, score: 0.9 },  // ratio=1.15 drop=0.05
+    });
+    const result = evaluatePosture(now, baseline);
+    expect(result.issues).toHaveLength(0);
+  });
+
+  it("detects shoulder tilt increase against baseline", () => {
+    // baseline shoulderTilt=0, now=0.07 → delta 0.07 > 0.05
+    const now = createKeypoints({
+      left_shoulder: { name: "left_shoulder", x: 110, y: 193, score: 0.9 },
     });
     const result = evaluatePosture(now, baseline);
     expect(result.issues).toContain("어깨 기울어짐");
   });
 
   it("absolute-mode tilt threshold (0.08) would NOT fire here", () => {
-    // 같은 값으로 절대 모드 평가 시: 0.05 < 0.08 → 안 잡힘
+    // 같은 값으로 절대 모드 평가 시: 0.07 < 0.08 → 안 잡힘
     const now = createKeypoints({
-      left_shoulder: { name: "left_shoulder", x: 110, y: 195, score: 0.9 },
+      left_shoulder: { name: "left_shoulder", x: 110, y: 193, score: 0.9 },
     });
     const result = evaluatePosture(now);
     expect(result.issues).not.toContain("어깨 기울어짐");
@@ -415,6 +426,56 @@ describe("validateBaselineCandidate", () => {
   });
 });
 
+// ===== isCameraShifted =====
+
+describe("isCameraShifted", () => {
+  const baselineMetrics = computeMetrics(createKeypoints());
+  const baseline = { capturedAt: "2026-05-17T00:00:00Z", metrics: baselineMetrics };
+
+  it("returns false for identical shoulder width", () => {
+    expect(isCameraShifted(baselineMetrics, baseline)).toBe(false);
+  });
+
+  it("returns false for small shoulder width change (< CAMERA_SHIFT_RATIO)", () => {
+    // baseline 어깨 너비 100 → 120 (+20%)
+    const m = computeMetrics(createKeypoints({
+      left_shoulder: { name: "left_shoulder", x: 100, y: 200, score: 0.9 },
+      right_shoulder: { name: "right_shoulder", x: 220, y: 200, score: 0.9 },
+    }));
+    expect(isCameraShifted(m, baseline)).toBe(false);
+  });
+
+  it("returns true when shoulder width changes beyond CAMERA_SHIFT_RATIO", () => {
+    // baseline 100 → 150 (+50%)
+    const m = computeMetrics(createKeypoints({
+      left_shoulder: { name: "left_shoulder", x: 85, y: 200, score: 0.9 },
+      right_shoulder: { name: "right_shoulder", x: 235, y: 200, score: 0.9 },
+    }));
+    expect(isCameraShifted(m, baseline)).toBe(true);
+  });
+
+  it("returns true when shoulder width shrinks significantly", () => {
+    // baseline 100 → 60 (-40%)
+    const m = computeMetrics(createKeypoints({
+      left_shoulder: { name: "left_shoulder", x: 130, y: 200, score: 0.9 },
+      right_shoulder: { name: "right_shoulder", x: 190, y: 200, score: 0.9 },
+    }));
+    expect(isCameraShifted(m, baseline)).toBe(true);
+  });
+
+  it("returns false when current metrics is null", () => {
+    expect(isCameraShifted(null, baseline)).toBe(false);
+  });
+
+  it("returns false when baseline is null", () => {
+    expect(isCameraShifted(baselineMetrics, null)).toBe(false);
+  });
+
+  it("CAMERA_SHIFT_RATIO is 0.30", () => {
+    expect(CAMERA_SHIFT_RATIO).toBe(0.30);
+  });
+});
+
 // ===== 상수 =====
 
 describe("constants", () => {
@@ -428,18 +489,18 @@ describe("constants", () => {
     expect(POSTURE_THRESHOLD.slouchRatio).toBe(0.70);
   });
 
-  it("BASELINE_DELTA has expected delta values", () => {
-    expect(BASELINE_DELTA.noseShoulderDrop).toBe(0.10);
-    expect(BASELINE_DELTA.earShoulderDrop).toBe(0.06);
-    expect(BASELINE_DELTA.shoulderTiltIncrease).toBe(0.04);
+  it("BASELINE_DELTA has expected delta values (보수화된 v0.7.6+)", () => {
+    expect(BASELINE_DELTA.noseShoulderDrop).toBe(0.12);
+    expect(BASELINE_DELTA.earShoulderDrop).toBe(0.08);
+    expect(BASELINE_DELTA.shoulderTiltIncrease).toBe(0.05);
   });
 
   it("MIN_KEYPOINT_SCORE is 0.3", () => {
     expect(MIN_KEYPOINT_SCORE).toBe(0.3);
   });
 
-  it("CONSECUTIVE_BAD_THRESHOLD is 2", () => {
-    expect(CONSECUTIVE_BAD_THRESHOLD).toBe(2);
+  it("CONSECUTIVE_BAD_THRESHOLD is 3 (false positive 0 정책)", () => {
+    expect(CONSECUTIVE_BAD_THRESHOLD).toBe(3);
   });
 
   it("DEFAULT_CHECK_INTERVAL_SEC is 40", () => {

@@ -494,10 +494,8 @@ function createAppCore(deps) {
             click: () => {
               if (!store.get("postureCheckEnabled")) {
                 store.set("postureCheckEnabled", true);
-                loadPostureDetector().then(() => {
-                  if (postureDetectorReady) {
-                    startPostureCheck();
-                  } else {
+                loadPostureDetector().then(async () => {
+                  if (!postureDetectorReady) {
                     store.set("postureCheckEnabled", false);
                     const failNotice = new Notification({
                       title: "🤖 자세 감시 AI 로드 실패",
@@ -505,7 +503,22 @@ function createAppCore(deps) {
                       silent: true,
                     });
                     failNotice.show();
+                    updateTrayMenu();
+                    return;
                   }
+
+                  // baseline 이 없으면 자동 캘리브레이션을 강제 실행.
+                  // false positive 0 정책: baseline 없이 절대 임계값으로 감시하지 않는다.
+                  if (!store.get("postureBaseline")) {
+                    const ok = await runBaselineCalibration({ auto: true });
+                    if (!ok) {
+                      store.set("postureCheckEnabled", false);
+                      updateTrayMenu();
+                      return;
+                    }
+                  }
+
+                  startPostureCheck();
                   updateTrayMenu();
                 });
               }
@@ -659,9 +672,41 @@ function createAppCore(deps) {
   async function runPostureCheck() {
     if (!postureDetectorReady) return;
 
+    // false positive 0 정책: baseline 없이는 절대 알림을 보내지 않는다.
+    // (정상 흐름에선 AI 모드 켤 때 baseline 캘리브레이션이 강제되므로 여기 도달 시 baseline 이 있어야 함.
+    //  외부 도구로 store 가 수정된 등 비정상 케이스 방어용 가드.)
+    const baseline = store.get("postureBaseline") || undefined;
+    if (!baseline) {
+      _debugLogPosture("skip", { reason: "no baseline" });
+      return;
+    }
+
     try {
-      const baseline = store.get("postureBaseline") || undefined;
       const result = await captureAndAnalyze(baseline);
+
+      // 카메라가 옮겨졌을 가능성: 현재 어깨 너비와 baseline 어깨 너비 차이가 큼.
+      // 이런 상태로 baseline delta 평가를 계속하면 정상 자세도 거북목으로 오탐될 수 있다.
+      // → baseline 을 무효화하고 사용자에게 재캘리브레이션을 안내한 뒤 감시 중단.
+      const { isCameraShifted } = require("./lib/posture-detector");
+      if (result.metrics && isCameraShifted(result.metrics, baseline)) {
+        _debugLogPosture("camera-shift", {
+          baselineWidth: baseline.metrics.shoulderWidth,
+          nowWidth: result.metrics.shoulderWidth,
+        });
+        store.delete("postureBaseline");
+        const notice = new Notification({
+          title: "📸 카메라 위치가 바뀐 것 같아요",
+          body: "정확한 감지를 위해 기준 자세를 다시 저장해주세요. 감시를 일시 중지합니다.",
+          silent: true,
+        });
+        notice.show();
+        store.set("postureCheckEnabled", false);
+        stopPostureCheck();
+        if (badPosture) setPostureGood();
+        updateTrayMenu();
+        return;
+      }
+
       const isActuallyBad = !result.isGood && result.issues.length > 0 && !result.issues.includes("키포인트 신뢰도 부족");
       const isUncertain = result.mode === "uncertain"
         || result.issues.includes("키포인트 신뢰도 부족")
@@ -711,7 +756,14 @@ function createAppCore(deps) {
     } catch (_) { /* ignore */ }
   }
 
-  async function runBaselineCalibration() {
+  /**
+   * @param {{ auto?: boolean }} [opts]  auto=true 면 AI 모드 켜는 흐름에서 자동 트리거된 경우.
+   *   안내 메시지를 그에 맞게 다르게 보여준다.
+   * @returns {Promise<boolean>} baseline 저장 성공 여부
+   */
+  async function runBaselineCalibration(opts = {}) {
+    const auto = !!opts.auto;
+
     if (!imagesnapAvailable) {
       const notice = new Notification({
         title: "📸 카메라 사용 불가",
@@ -719,7 +771,7 @@ function createAppCore(deps) {
         silent: true,
       });
       notice.show();
-      return;
+      return false;
     }
     // 자세 검사 미활성 상태에서도 캘리브레이션은 가능하도록 detector 로딩 시도
     if (!postureDetectorReady) {
@@ -731,18 +783,22 @@ function createAppCore(deps) {
           silent: true,
         });
         failNotice.show();
-        return;
+        return false;
       }
     }
 
-    // 사용자에게 3초 후 촬영을 알림
+    // 사용자에게 5초 후 촬영을 알림 — 자동 모드에선 더 친절한 안내, 충분한 준비 시간
     const heads = new Notification({
-      title: "📸 곧 기준 자세를 촬영합니다",
-      body: "3초 안에 바른 자세로 카메라 정면을 봐주세요.",
+      title: auto
+        ? "📸 기준 자세 설정이 필요해요"
+        : "📸 곧 기준 자세를 촬영합니다",
+      body: auto
+        ? "정확한 거북목 감지를 위해 본인의 바른 자세를 먼저 저장합니다. 5초 안에 가장 좋은 자세로 카메라 정면을 봐주세요."
+        : "5초 안에 바른 자세로 카메라 정면을 봐주세요.",
       silent: false,
     });
     heads.show();
-    await new Promise((r) => setTimeout(r, 3000));
+    await new Promise((r) => setTimeout(r, 5000));
 
     try {
       const result = await captureBaseline();
@@ -750,20 +806,21 @@ function createAppCore(deps) {
       if (!result.ok) {
         const failNotice = new Notification({
           title: "📸 기준 자세 저장 실패",
-          body: result.reason,
+          body: `${result.reason}\n트레이 메뉴에서 다시 시도할 수 있습니다.`,
           silent: true,
         });
         failNotice.show();
-        return;
+        return false;
       }
       store.set("postureBaseline", result.baseline);
       const okNotice = new Notification({
         title: "📸 기준 자세 저장 완료",
-        body: "이제 이 자세를 기준으로 거북목·구부정 여부를 더 정확히 감지합니다.",
+        body: "이제 이 자세를 기준으로 거북목·구부정 여부를 정확히 감지합니다.",
         silent: false,
       });
       okNotice.show();
       updateTrayMenu();
+      return true;
     } catch (err) {
       _debugLogPosture("baseline-error", { message: err && err.message });
       const errNotice = new Notification({
@@ -772,6 +829,7 @@ function createAppCore(deps) {
         silent: true,
       });
       errNotice.show();
+      return false;
     }
   }
 

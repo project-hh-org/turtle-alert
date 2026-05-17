@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>거북이경보 — 자세 판정 로직</title>
-  <meta name="description" content="MoveNet 키포인트로 거북목·구부정한 자세를 어떻게 판정하는가. 절대 임계값, 사용자 캘리브레이션 baseline, 강/약 신호 트리 설명." />
+  <meta name="description" content="MoveNet 키포인트와 사용자 캘리브레이션 baseline 으로 거북목·구부정한 자세를 판정하는 방법. 강/약 신호 트리, 카메라 이동 자동 감지, false positive 0 정책." />
   <meta property="og:title" content="거북이경보 — 자세 판정 로직" />
   <meta property="og:description" content="MoveNet 키포인트로 거북목·구부정한 자세를 어떻게 판정하는가." />
   <meta property="og:image" content="https://turtle-alert.project-hh.com/icon.png" />
@@ -245,16 +245,23 @@
     <h1>🧠 자세 판정 로직</h1>
     <p class="subtitle">
       거북이경보가 웹캠 한 장으로 어떻게 거북목과 구부정한 자세를 가려내는지,
-      그리고 사용자 캘리브레이션이 왜 단순 임계값보다 정확한지 정리한 문서입니다.
+      그리고 왜 사용자 캘리브레이션이 반드시 필요한지 정리한 문서입니다.
     </p>
+
+    <div class="callout danger">
+      <strong>v0.7.6+ 정책 — "올바른 자세에서 알림이 뜨지 않는다"가 최우선.</strong>
+      AI 자세 감시를 켜는 순간 본인의 바른 자세를 먼저 baseline 으로 저장해야 합니다.
+      이후 알림은 baseline 과의 변화량 기준으로만 발송되며, 카메라가 옮겨졌다고 판단되면
+      자동으로 baseline 을 무효화하고 재캘리브레이션을 요청합니다.
+    </div>
 
     <div class="toc">
       <strong>목차</strong>
       <ol>
         <li><a href="#input">1. 입력 — MoveNet 키포인트</a></li>
         <li><a href="#metrics">2. 정규화된 지표 계산</a></li>
-        <li><a href="#absolute">3. 절대 임계값 모드 (기본)</a></li>
-        <li><a href="#baseline">4. 캘리브레이션 모드 (권장)</a></li>
+        <li><a href="#baseline">3. 캘리브레이션 모드 (필수)</a></li>
+        <li><a href="#camera-shift">4. 카메라 이동 자동 감지</a></li>
         <li><a href="#tree">5. 판정 트리 — 강/약/이중 신호</a></li>
         <li><a href="#uncertain">6. 불확실(uncertain) 처리</a></li>
         <li><a href="#tradeoffs">7. 트레이드오프와 한계</a></li>
@@ -294,50 +301,28 @@ headTilt          = |leftEar.y − rightEar.y| / shoulderWidth</code></pre>
       작아질수록 코·귀가 어깨 높이로 내려와 거북목·구부정 신호가 됩니다.
     </p>
 
-    <h2 id="absolute">3. 절대 임계값 모드 (기본)</h2>
+    <h2 id="baseline">3. 캘리브레이션 모드 (필수)</h2>
     <p>
-      캘리브레이션을 한 적이 없는 사용자에게 적용되는 fallback. 통계적으로
-      "대부분의 사람에게 거북목으로 보이는 구간"을 정해둔 값입니다.
+      AI 자세 검사를 켜면 자동으로 캘리브레이션 흐름이 시작됩니다. 알림 5초 후
+      카메라가 한 컷을 찍고, 그 시점의 지표를 <code>baseline</code> 으로 저장합니다.
+      이후 매 검사 때는 <strong>baseline 대비 변화량(delta)</strong>으로 평가합니다.
     </p>
-    <table>
-      <thead><tr><th>지표</th><th>약 임계값</th><th>강 임계값</th></tr></thead>
-      <tbody>
-        <tr><td>noseShoulderRatio</td><td><code>&lt; 0.55</code></td><td><code>&lt; 0.40</code> (단독 거북목)</td></tr>
-        <tr><td>earShoulderRatio</td><td><code>&lt; 0.20</code></td><td><code>&lt; 0.10</code> (단독 거북목)</td></tr>
-        <tr><td>shoulderTilt</td><td colspan="2"><code>&gt; 0.08</code></td></tr>
-        <tr><td>headTilt</td><td colspan="2"><code>&gt; 0.08</code></td></tr>
-        <tr><td>noseOffset</td><td colspan="2"><code>&gt; 0.12</code></td></tr>
-        <tr><td>slouchRatio (구부정 단독)</td><td colspan="2"><code>noseShoulderRatio &lt; 0.70</code></td></tr>
-      </tbody>
-    </table>
-    <div class="callout">
-      <strong>왜 두 종류 임계값인가?</strong>
-      코든 귀든 한쪽 신호가 매우 강하게 잡히면 다른 신호가 약해도 거북목으로 보는 게 자연스럽습니다.
-      이전 버전은 두 신호가 모두 걸려야 거북목이라 라벨링해서, 실제 거북목인 사용자가
-      <em>"구부정한 자세"</em>로만 누적 알림 카운트만 채우는 케이스가 있었습니다.
-    </div>
+    <p>
+      절대 임계값이 아니라 본인 기준의 변화량을 보기 때문에 카메라 위치, 체형, 거리,
+      각도 등 환경 차이가 거의 자동으로 흡수됩니다. "내 평소보다 얼마나 나빠졌나"에
+      신호 대 잡음비가 훨씬 강합니다.
+    </p>
 
-    <h2 id="baseline">4. 캘리브레이션 모드 (권장)</h2>
-    <p>
-      사용자가 트레이에서 <strong>📸 지금 자세를 기준으로 저장</strong>을 누르면 그 시점의
-      지표가 <code>baseline</code>으로 저장됩니다. 이후 매 검사 때는 절대 임계값 대신
-      <strong>baseline 대비 변화량(delta)</strong>으로 평가합니다.
-    </p>
     <table>
       <thead><tr><th>신호</th><th>약 임계값 (drop)</th><th>강 임계값 (drop)</th></tr></thead>
       <tbody>
-        <tr><td>noseShoulderRatio drop</td><td><code>&gt; 0.10</code></td><td><code>&gt; 0.20</code></td></tr>
-        <tr><td>earShoulderRatio drop</td><td><code>&gt; 0.06</code></td><td><code>&gt; 0.15</code></td></tr>
-        <tr><td>shoulderTilt 증가</td><td colspan="2"><code>&gt; 0.04</code></td></tr>
-        <tr><td>headTilt 증가</td><td colspan="2"><code>&gt; 0.04</code></td></tr>
-        <tr><td>noseOffset 증가</td><td colspan="2"><code>&gt; 0.05</code></td></tr>
+        <tr><td>noseShoulderRatio drop</td><td><code>&gt; 0.12</code></td><td><code>&gt; 0.20</code></td></tr>
+        <tr><td>earShoulderRatio drop</td><td><code>&gt; 0.08</code></td><td><code>&gt; 0.15</code></td></tr>
+        <tr><td>shoulderTilt 증가</td><td colspan="2"><code>&gt; 0.05</code></td></tr>
+        <tr><td>headTilt 증가</td><td colspan="2"><code>&gt; 0.05</code></td></tr>
+        <tr><td>noseOffset 증가</td><td colspan="2"><code>&gt; 0.06</code></td></tr>
       </tbody>
     </table>
-    <p>
-      절대 임계값보다 훨씬 작은 변화량으로도 잡을 수 있는 이유는, 같은 사람·같은 카메라
-      환경 안에서 비교하기 때문입니다. "내 평소보다 얼마나 나빠졌나"라는 질문에
-      훨씬 강한 SNR(신호 대 잡음비)을 가집니다.
-    </p>
 
     <div class="callout">
       <strong>baseline 으로 저장될 수 있는 자세는 다음 조건을 만족해야 합니다.</strong>
@@ -348,12 +333,31 @@ headTilt          = |leftEar.y − rightEar.y| / shoulderWidth</code></pre>
         <li>모든 키포인트 신뢰도 ≥ 0.3</li>
       </ul>
       나쁜 자세를 baseline 으로 잡아 거북목이 영영 안 잡히는 사고를 방지합니다.
+      검증을 통과하지 못하면 트레이 메뉴에서 다시 시도할 수 있습니다.
     </div>
+
+    <h2 id="camera-shift">4. 카메라 이동 자동 감지</h2>
+    <p>
+      캘리브레이션 기반 시스템의 약점은 카메라 위치/거리가 바뀌면 baseline 이 무효해진다는 점입니다.
+      거북이경보는 매 측정마다 <strong>baseline 의 어깨 픽셀 너비</strong>와 <strong>현재 어깨 너비</strong>를 비교해
+      30% 이상 차이가 나면 카메라가 옮겨진 것으로 간주합니다.
+    </p>
+    <pre><code>shifted = |nowShoulderWidth − baselineShoulderWidth| / baselineShoulderWidth &gt; 0.30</code></pre>
+    <p>이 조건이 걸리면 다음을 자동 수행합니다.</p>
+    <ul>
+      <li><code>postureBaseline</code>을 store 에서 삭제 — 이전 baseline 으로는 더 이상 판정하지 않음</li>
+      <li><strong>AI 자세 감시를 일시 중지</strong>하고 트레이 메뉴의 토글도 OFF</li>
+      <li>"카메라 위치가 바뀐 것 같아요 — 기준 자세를 다시 저장해주세요" 알림 1회</li>
+    </ul>
+    <p>
+      사용자는 AI 모드를 다시 켜면서 새 환경의 baseline 을 다시 저장합니다. 카메라 환경이
+      급변한 직후의 false positive 알림을 원천 차단하는 안전장치입니다.
+    </p>
 
     <h2 id="tree">5. 판정 트리 — 강/약/이중 신호</h2>
     <p>
-      절대 모드와 캘리브레이션 모드 둘 다 동일한 트리를 따릅니다. 한 라벨만 부여되는
-      배타적 트리입니다.
+      한 라벨만 부여되는 배타적 트리입니다. 강한 단독 신호 또는 약한 두 신호가 동시에
+      걸려야 거북목, 약한 단독 신호는 구부정한 자세로 라벨링됩니다.
     </p>
     <div class="flow">
       <div class="flow-step">
@@ -416,7 +420,13 @@ headTilt          = |leftEar.y − rightEar.y| / shoulderWidth</code></pre>
       </li>
       <li>
         <strong>연속 N 회 임계</strong> — 한 번의 false positive 로 사용자를 깨우지 않도록
-        연속 2 회 이상 나쁜 자세가 감지될 때만 알림을 보냅니다.
+        연속 3 회 이상 나쁜 자세가 감지될 때만 알림을 보냅니다 (v0.7.6 부터 2 → 3 으로 보수화).
+      </li>
+      <li>
+        <strong>baseline 강제</strong> — v0.7.6 부터 baseline 없이 절대 임계값만으로 알림을
+        보내지 않습니다. AI 모드를 켜는 즉시 캘리브레이션 흐름이 자동 시작되며, 카메라가
+        옮겨졌다고 판단되면(baseline 어깨 너비 ±30% 초과) 자동으로 baseline 을 무효화하고
+        감시를 일시 중지합니다. "올바른 자세인데 알림이 뜨는" 케이스를 원천 차단하기 위함입니다.
       </li>
     </ul>
 
